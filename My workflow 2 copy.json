@@ -1,0 +1,409 @@
+{
+  "name": "My workflow 2 copy",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/upload/v1beta/files",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Goog-Upload-Protocol",
+              "value": "resumable"
+            },
+            {
+              "name": "X-Goog-Upload-Command",
+              "value": "start"
+            },
+            {
+              "name": "X-Goog-Upload-Header-Content-Length",
+              "value": "={{ $json['Upload file'][0].size }}"
+            },
+            {
+              "name": "X-Goog-Upload-Header-Content-Type",
+              "value": "={{ $json['Upload file'][0].mimetype }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"file\":{\n    \"display_name\":\" {{ $json['Upload file'][0].filename }}\"\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        0
+      ],
+      "id": "073a49ac-7048-4b0c-8fae-be3632cea0b3",
+      "name": "initiateUpload",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "5m1ZZ5NT8DW6d8kM",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return{\n  json: {},\n  binary: $('Code in JavaScript').item.binary\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        0
+      ],
+      "id": "f61b6246-a785-4309-ba1e-51147ce37f54",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"fileData\": {\n            \"mimeType\": \"{{ $json.file.mimeType }}\",\n            \"fileUri\": \"{{ $json.file.uri }}\"\n          }\n        },\n        {\n          \"text\": \"Analiza esta imagen como si fueras un técnico de soporte. Describe de forma clara y técnica qué información contiene esta captura de pantalla, incluyendo posibles errores, advertencias, códigos, títulos de ventana, mensajes del sistema operativo, versión de Windows o cualquier pista útil para diagnóstico técnico. Omite descripciones visuales genéricas como la barra de menú o los íconos, y enfócate en el contenido útil para solucionar un problema técnico.\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"responseMimeType\": \"application/json\",\n    \"responseSchema\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"diagnosis\": {\n          \"type\": \"string\",\n          \"description\": \"Descripción técnica basada en la imagen que puede ayudar al soporte a entender el problema\"\n        },\n        \"errorDetails\": {\n          \"type\": \"string\",\n          \"description\": \"Código o mensaje de error extraído, si aplica\"\n        }\n      },\n      \"required\": [\n        \"diagnosis\"\n      ]\n    }\n  }\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1312,
+        0
+      ],
+      "id": "8ba1d969-1c2e-4d10-a59d-bc451b45fbeb",
+      "name": "Analyze",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "5m1ZZ5NT8DW6d8kM",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1088,
+        0
+      ],
+      "id": "7bf341d7-e607-4955-95d8-9503bfa614ec",
+      "name": "Wait",
+      "webhookId": "f332191a-a4cf-4c4e-9290-38fcbcfb779a"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Actúa como un analista técnico experto en soporte IT.\n\nRecibirás dos textos:\n\n1. Descripción del ticket enviada por el usuario:\n{{ $('Code in JavaScript').item.json['Descripción del ticket'] }}\n\n2. Diagnóstico técnico generado por IA a partir de una imagen enviada:\n{{ $json.candidates[0].content.parts[0].text }}\n\nTu tarea es procesar esta información y construir un mensaje completo, claro y profesional, que incluya lo siguiente:\n\n---\n\n### 1. Clasificación del Ticket\n\nEvalúa la urgencia y criticidad del ticket basándote en estos criterios:\n\n- **CRÍTICO**: si el usuario es de \"staffing\" o un rol operativo esencial y el problema le impide trabajar o atender clientes.\n- **ALTO**: si afecta funciones importantes pero no bloquea completamente su trabajo.\n- **MEDIO**: si se trata de advertencias, problemas menores o no urgentes.\n- **BAJO**: consultas generales, detalles visuales o solicitudes sin impacto inmediato.\n\nDevuelve:\n- `\"clasificación\"`: uno de [\"CRÍTICO\", \"ALTO\", \"MEDIO\", \"BAJO\"]\n- `\"razón\"`: una explicación técnica y profesional del motivo de esa clasificación.\n\n---\n\n### 2. Resumen Técnico para Soporte\n\nRedacta un párrafo claro, técnico y útil que sirva como resumen para el equipo de soporte.\n\nEste resumen debe integrar:\n- Los detalles más relevantes del diagnóstico generado a partir de la imagen.\n- Lo que se puede inferir de la descripción escrita por el usuario.\n- Códigos de error, síntomas del sistema, estado de activación, servicios afectados, etc.\n\nEvita repetir detalles irrelevantes o genéricos.\n\n---\n\n### 3. Posibles soluciones o pasos sugeridos\n\nSugiere uno o más pasos que el equipo técnico puede seguir para comenzar a resolver el problema, por ejemplo:\n- Ejecutar herramientas de diagnóstico.\n- Revisar licencias.\n- Restablecer configuraciones.\n- Escalar a un nivel superior si aplica.\n\nSé específico, pero profesional. No inventes soluciones si no hay información clara.\n\n---\n\n### 4. Estructura esperada (JSON):\n\n```json\n{\n  \"clasificación\": \"ALTO\",\n  \"razón\": \"Aunque el usuario no es parte del equipo de staffing, el problema afecta funciones del sistema que pueden interferir con su trabajo.\",\n  \"resumen_soporte\": \"La imagen muestra una pantalla de Activación de Windows con un error de licencia (0xC004F074). El usuario indica que no puede acceder a funciones clave. El sistema operativo parece estar limitado.\",\n  \"posibles_soluciones\": [\n    \"Ejecutar el solucionador de problemas de activación desde Configuración > Actualización y seguridad > Activación.\",\n    \"Verificar la existencia de una clave de producto válida.\",\n    \"Contactar al área de licenciamiento si no se resuelve.\"\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        640,
+        272
+      ],
+      "id": "bb924ee0-523a-4deb-9fbc-2b9a78b4cbbe",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        256,
+        400
+      ],
+      "id": "f71aa75a-bdd0-45f9-a617-bbea78161ed3",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "4s0Pf23jmNALMjxl",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "test-session"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        480,
+        464
+      ],
+      "id": "57ed13d8-20f0-4720-ae4d-493533c6ca1f",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "sendTo": "s.rodriguezs234@uniandes.edu.co",
+        "subject": "= {{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1424,
+        272
+      ],
+      "id": "f008b8d4-47a8-475a-9633-25e72528820c",
+      "name": "Gmail",
+      "webhookId": "455c716f-0c88-41af-a5ec-19590898e015",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "UiM9WYSUvHiMTuV1",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-ticket",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -560,
+        112
+      ],
+      "id": "a5806f23-da95-4afb-b251-fe01bc2e3ae0",
+      "name": "Webhook",
+      "webhookId": "6d46b262-9121-4968-8975-6f597d466a69"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lee payload: si viene como string en body, lo parsea; si ya viene objeto, lo usa tal cual\nconst src = $json.body ?? $json;\nconst p = (typeof src === 'string') ? JSON.parse(src) : src;\n\n// Validaciones mínimas\nif (!p.FileBase64) {\n  throw new Error('Falta FileBase64 en el payload del Webhook');\n}\n\n// Normalización de nombre y MIME\nconst fileName = p.FileName || 'documento.pdf';\nlet mimeType = p.MimeType;\nif (!mimeType) {\n  mimeType = fileName.toLowerCase().endsWith('.docx')\n    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'\n    : 'application/pdf';\n}\n\n// Limpia posible prefijo data:... y calcula tamaño\nconst base64 = String(p.FileBase64).replace(/^data:[^,]+,/, '');\nconst size = Buffer.from(base64, 'base64').length;\n\n// SALIDA idéntica a la del Form + binario en Upload_file\nreturn [{\n  json: {\n    \"Upload file\": [{ filename: fileName, mimetype: mimeType, size }],\n    \"Descripción del ticket\": p.Description || \"\",\n    \"submittedAt\": new Date().toISOString(),\n    \"formMode\": \"test\"      // si prefieres, cambia a \"webhook\"\n  },\n  binary: {\n    Upload_file: {          // 👈 clave que tu Upload1 está esperando\n      data: base64,\n      fileName,\n      mimeType\n    }\n  }\n}];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        112
+      ],
+      "id": "4f7f2d00-c4ae-466a-9f19-ed71e5e82c06",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('initiateUpload').item.json.headers['x-goog-upload-url'] }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Length",
+              "value": "={{ $('Code in JavaScript').item.json['Upload file'][0].size }}"
+            },
+            {
+              "name": "X-Goog-Upload-Offset",
+              "value": "0"
+            },
+            {
+              "name": "X-Goog-Upload-Command",
+              "value": "upload, finalize"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "Upload_file",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        864,
+        0
+      ],
+      "id": "366fc620-f61b-4f72-b4ef-a3356bcf8e5f",
+      "name": "Upload1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = items[0].json.output;\n\n// Quitamos las comillas del bloque ```json y lo convertimos a objeto JS\nconst jsonText = raw.replace(/^```json\\n/, '').replace(/\\n```$/, '');\nconst data = JSON.parse(jsonText);\n\nreturn [\n  {\n    json: {\n      subject: `Peri-IA: Soporte Técnico - Clasificación ${data.clasificación}`,\n      body: `\n        <p><strong>Clasificación:</strong> ${data.clasificación}</p>\n        <p><strong>Razón:</strong> ${data.razón}</p>\n        <p><strong>Resumen del soporte:</strong> ${data.resumen_soporte}</p>\n        <p><strong>Posibles soluciones:</strong></p>\n        <ul>\n          ${data.posibles_soluciones.map(sol => `<li>${sol}</li>`).join('')}\n        </ul>\n      `\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        272
+      ],
+      "id": "f6c53145-bc9c-4201-a785-c623959d7892",
+      "name": "Code in JavaScript1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "initiateUpload": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Upload1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Analyze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "initiateUpload",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload1": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0ea83a82-73ae-466e-82a9-9248943a948a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b67e38761b6c9de859f43dc296b21f51642ce839e53833bdf76b81816fe65c7f"
+  },
+  "id": "NaQfITI2YrxPbB0I",
+  "tags": []
+}
